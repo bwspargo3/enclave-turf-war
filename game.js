@@ -148,9 +148,9 @@ function initGame() {
   showScreen('game-screen');
   updateUI();
 
-  gameState.nextSlDrop    = Date.now() + SL_DROP_MS;
+  gameState.nextSlDrop    = performance.now() + SL_DROP_MS;
   gameState.phase         = 'intermission';
-  gameState.waveStartTime = Date.now() + 3000; // 3s grace before wave 1
+  gameState.waveStartTime = performance.now() + 3000; // 3s grace before wave 1
 
   showWaveBanner('WAVE 1 — INCOMING!', 2500);
 
@@ -160,7 +160,7 @@ function initGame() {
 // ── START WAVE ───────────────────────────────────────────────
 function startWave(waveIdx) {
   const schedule = WAVES[waveIdx];
-  const now = Date.now();
+  const now = performance.now();
   gameState.waveSchedule    = schedule.map(([type, delay]) => [type, now + delay]);
   gameState.waveEnemiesLeft = schedule.length;
   gameState.phase           = 'wave';
@@ -179,7 +179,7 @@ function waveCleared() {
     updateUI();
     const delay = gameState.wave === 3 ? 6000 : 5000;
     showWaveBanner(`WAVE ${gameState.wave} — INCOMING!`, 2500);
-    gameState.waveStartTime = Date.now() + delay;
+    gameState.waveStartTime = performance.now() + delay;
   }
 }
 
