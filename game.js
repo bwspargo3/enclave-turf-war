@@ -2,53 +2,55 @@
 //  ENCLAVE TURF WAR: MEGA vs. The Entrance Weeds
 //  game.js — Vanilla JS / Canvas
 // ============================================================
-
 'use strict';
 
 // ── CONSTANTS ────────────────────────────────────────────────
-const COLS       = 9;
-const ROWS       = 5;
-const SL_DROP_MS = 5000;   // sunlight token drops every 5s
-const GAME_TICK  = 50;     // ms per frame (~20fps for logic)
+const COLS        = 9;
+const ROWS        = 5;
+const SL_DROP_MS  = 5000;   // sunlight token drops every 5s
 
+// Speed values are in cells/second — converted to px/ms at spawn time
 const UNIT_DEFS = {
-  sunscreen: { name:'Sunscreen Cooler', cost:50,  hp:40,   icon:'🧴', color:'#63BFFF', isPassive:true,  genSL:25, genMs:10000 },
-  note:      { name:'Note Launcher',    cost:100, hp:80,   icon:'📜', color:'#A8E6A3', isPassive:false, ranged:true, damage:20, fireMs:2000, projSpeed:3 },
-  bruiser:   { name:'Bro-Tank Bruiser', cost:150, hp:250,  icon:'💪', color:'#F4A261', isPassive:false, melee:true, damage:30, meleeMs:1200 },
-  gate:      { name:'Vinyl Gate',       cost:50,  hp:500,  icon:'🚧', color:'#F0F0F0', isPassive:true  },
+  sunscreen: { name:'Sunscreen Cooler', cost:50,  hp:80,   icon:'🧴', color:'#63BFFF', isPassive:true,  genSL:25, genMs:10000 },
+  note:      { name:'Note Launcher',    cost:100, hp:100,  icon:'📜', color:'#A8E6A3', isPassive:false, ranged:true,  damage:20, fireMs:2000, projSpeed:6 },
+  bruiser:   { name:'Bro-Tank Bruiser', cost:150, hp:300,  icon:'💪', color:'#F4A261', isPassive:false, melee:true,   damage:30, meleeMs:1200 },
+  gate:      { name:'Vinyl Gate',       cost:50,  hp:600,  icon:'🚧', color:'#F0F0F0', isPassive:true  },
 };
 
 const ENEMY_DEFS = {
-  dandelion: { name:'Dandelion Spore',   hp:60,  speed:0.4, icon:'🌼', color:'#FFE566', damage:10, dmgMs:1200, points:10 },
-  crabgrass: { name:'Crabgrass Crawler', hp:250, speed:0.18, icon:'🦀', color:'#88AA44', damage:25, dmgMs:1000, points:25 },
-  charlie:   { name:'Creeping Charlie',  hp:80,  speed:0.6, icon:'🌿', color:'#66BB66', damage:10, dmgMs:1000, points:20, erratic:true },
-  boss:      { name:'Grand Dandelion',   hp:900, speed:0.12, icon:'🌻', color:'#FF9900', damage:40, dmgMs:1400, points:200, isBoss:true },
+  //                                  cells/sec
+  dandelion: { name:'Dandelion Spore',   hp:60,  speed:0.35, icon:'🌼', color:'#FFE566', damage:10, dmgMs:1200, points:10 },
+  crabgrass: { name:'Crabgrass Crawler', hp:250, speed:0.15, icon:'🦀', color:'#88AA44', damage:25, dmgMs:1000, points:25 },
+  charlie:   { name:'Creeping Charlie',  hp:80,  speed:0.50, icon:'🌿', color:'#66BB66', damage:10, dmgMs:1000, points:20, erratic:true },
+  boss:      { name:'Grand Dandelion',   hp:900, speed:0.10, icon:'🌻', color:'#FF9900', damage:40, dmgMs:1400, points:200, isBoss:true },
 };
 
-// Wave definitions — each element is [enemyType, delayMs after wave start]
+// Wave definitions — [enemyType, delayMs after wave start]
 const WAVES = [
   [ // Wave 1 — introductory
-    ['dandelion', 0],   ['dandelion', 3000],  ['dandelion', 6000],
-    ['dandelion', 9000], ['crabgrass', 12000], ['dandelion', 15000],
-    ['dandelion', 18000],['dandelion', 21000],
+    ['dandelion',  0],    ['dandelion',  4000], ['dandelion',  8000],
+    ['dandelion', 12000], ['crabgrass', 16000], ['dandelion', 20000],
+    ['dandelion', 24000], ['dandelion', 28000],
   ],
   [ // Wave 2 — mixed + charlies
-    ['dandelion', 0],   ['charlie', 2000],    ['dandelion', 4000],
-    ['crabgrass', 5000],['charlie', 7000],    ['dandelion', 9000],
-    ['crabgrass', 10000],['charlie', 12000],  ['dandelion', 14000],
-    ['crabgrass', 16000],['dandelion', 18000],
+    ['dandelion',  0],   ['charlie',   3000],  ['dandelion',  6000],
+    ['crabgrass',  8000],['charlie',  11000],  ['dandelion', 14000],
+    ['crabgrass', 17000],['charlie',  20000],  ['dandelion', 23000],
+    ['crabgrass', 26000],['dandelion',29000],
   ],
   [ // Wave 3 — heavy + BOSS
-    ['dandelion', 0],   ['crabgrass', 1000],  ['charlie', 2000],
-    ['dandelion', 4000],['crabgrass', 5000],  ['charlie', 6000],
-    ['dandelion', 8000],['crabgrass', 9000],  ['charlie', 11000],
-    ['boss',      14000],
-    ['dandelion',16000],['crabgrass', 18000], ['dandelion', 20000],
+    ['dandelion',  0],   ['crabgrass',  2000], ['charlie',   4000],
+    ['dandelion',  7000],['crabgrass',  9000], ['charlie',  12000],
+    ['dandelion', 15000],['crabgrass', 17000], ['charlie',  20000],
+    ['boss',      24000],
+    ['dandelion', 27000],['crabgrass', 30000], ['dandelion', 33000],
   ],
 ];
 
 // ── STATE ────────────────────────────────────────────────────
 let gameState;
+let rafId = null;
+let gameRunning = false; // guard against stale loops
 
 function freshState() {
   return {
@@ -56,9 +58,9 @@ function freshState() {
     score: 0,
     wave: 1,
     lives: 5,
-    phase: 'idle',          // idle | wave | intermission | boss_dead | won | lost
+    phase: 'idle',
     waveStartTime: null,
-    waveSchedule: [],       // remaining spawns [ [type, absoluteTime], ... ]
+    waveSchedule: [],
     waveEnemiesLeft: 0,
     grid: Array.from({length: ROWS}, () => Array(COLS).fill(null)),
     defenders: [],
@@ -70,65 +72,53 @@ function freshState() {
     nextSlDrop: 0,
     lastTick: 0,
     idCounter: 0,
-    stunMessages: [],       // { x, y, text, ttl }
+    stunMessages: [],
+    _hoverCell: null,
   };
 }
 
 // ── CANVAS SETUP ─────────────────────────────────────────────
-const canvas   = document.getElementById('game-canvas');
-const ctx      = canvas.getContext('2d');
+const canvas = document.getElementById('game-canvas');
+const ctx    = canvas.getContext('2d');
 let CW, CH, CELL_W, CELL_H, GRID_X, GRID_Y;
 
 function resizeCanvas() {
   const wrap = document.getElementById('canvas-wrap');
   const ww   = wrap.clientWidth;
   const wh   = wrap.clientHeight;
-
-  // Maintain a 9:5.4 ratio (9 cols × rows with header row)
   const maxW = Math.min(ww, 900);
-  const maxH = wh;
-
-  CELL_W = Math.floor(Math.min(maxW / COLS, maxH / (ROWS + 1)));
+  CELL_W = Math.floor(Math.min(maxW / COLS, wh / (ROWS + 1)));
   CELL_H = CELL_W;
   CW = CELL_W * COLS;
-  CH = CELL_H * (ROWS + 1); // +1 for sun-fall zone at top
-
+  CH = CELL_H * (ROWS + 1);
   canvas.width  = CW;
   canvas.height = CH;
   canvas.style.width  = CW + 'px';
   canvas.style.height = CH + 'px';
-
   GRID_X = 0;
-  GRID_Y = CELL_H; // row 0 is the sky
+  GRID_Y = CELL_H; // top row is sky
 }
 
-// ── ID HELPER ────────────────────────────────────────────────
-function uid() { return ++gameState.idCounter; }
+// ── HELPERS ──────────────────────────────────────────────────
+function uid()    { return ++gameState.idCounter; }
 
-// ── SCREEN HELPERS ───────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
 
-// ── UI UPDATES ───────────────────────────────────────────────
 function updateUI() {
   const g = gameState;
   document.getElementById('ui-sunlight').textContent = g.sunlight;
   document.getElementById('ui-score').textContent    = g.score;
   document.getElementById('ui-wave').textContent     = g.wave;
   document.getElementById('ui-lives').textContent    = '🏠'.repeat(Math.max(0, g.lives));
-
-  // Dim un-affordable buttons
   document.querySelectorAll('.unit-btn[data-unit]').forEach(btn => {
-    const type = btn.dataset.unit;
-    if (!type) return;
-    const cost = UNIT_DEFS[type].cost;
+    const cost = UNIT_DEFS[btn.dataset.unit]?.cost ?? Infinity;
     btn.classList.toggle('disabled-unit', g.sunlight < cost);
   });
 }
 
-// ── WAVE BANNER ──────────────────────────────────────────────
 function showWaveBanner(text, durationMs = 2000) {
   const banner = document.getElementById('wave-banner');
   document.getElementById('wave-banner-text').textContent = text;
@@ -138,109 +128,111 @@ function showWaveBanner(text, durationMs = 2000) {
 
 // ── GAME INIT ────────────────────────────────────────────────
 function initGame() {
+  // Stop any running loop
+  gameRunning = false;
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+
   gameState = freshState();
   resizeCanvas();
-
-  // Clear toolbar selection
   document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-  gameState.selectedUnit = null;
-
   showScreen('game-screen');
   updateUI();
 
-  gameState.nextSlDrop    = performance.now() + SL_DROP_MS;
-  gameState.phase         = 'intermission';
-  gameState.waveStartTime = performance.now() + 3000; // 3s grace before wave 1
+  // Use performance.now() throughout — matches rAF timestamps
+  const t0 = performance.now();
+  gameState.lastTick   = t0;
+  gameState.nextSlDrop = t0 + SL_DROP_MS;
+  gameState.phase      = 'intermission';
+  gameState.waveStartTime = t0 + 3000;
 
   showWaveBanner('WAVE 1 — INCOMING!', 2500);
-
-  requestAnimationFrame(gameLoop);
+  gameRunning = true;
+  rafId = requestAnimationFrame(gameLoop);
 }
 
-// ── START WAVE ───────────────────────────────────────────────
+// ── WAVE MANAGEMENT ──────────────────────────────────────────
 function startWave(waveIdx) {
-  const schedule = WAVES[waveIdx];
   const now = performance.now();
+  const schedule = WAVES[waveIdx];
   gameState.waveSchedule    = schedule.map(([type, delay]) => [type, now + delay]);
   gameState.waveEnemiesLeft = schedule.length;
-  gameState.phase           = 'wave';
+  gameState.phase = 'wave';
 }
 
-function waveCleared() {
-  if (gameState.wave >= 3) {
-    // Final wave boss must be dead — check
-    const bossAlive = gameState.enemies.some(e => e.type === 'boss');
-    if (bossAlive) return; // still going
-    gameState.phase = 'won';
+function checkWaveCleared() {
+  const g = gameState;
+  if (g.waveSchedule.length > 0) return;       // still spawning
+  if (g.enemies.length > 0) return;            // still alive
+  if (g.waveEnemiesLeft > 0) return;           // count mismatch safety
+
+  if (g.wave >= 3) {
     endGame(true);
   } else {
-    gameState.phase = 'intermission';
-    gameState.wave++;
+    g.phase = 'intermission';
+    g.wave++;
     updateUI();
-    const delay = gameState.wave === 3 ? 6000 : 5000;
-    showWaveBanner(`WAVE ${gameState.wave} — INCOMING!`, 2500);
-    gameState.waveStartTime = performance.now() + delay;
+    const delay = g.wave === 3 ? 6000 : 5000;
+    showWaveBanner(`WAVE ${g.wave} — INCOMING!`, 2500);
+    g.waveStartTime = performance.now() + delay;
   }
 }
 
-// ── SPAWN ENEMY ──────────────────────────────────────────────
+function killEnemy(idx) {
+  const g = gameState;
+  const e = g.enemies[idx];
+  g.score += e.points;
+  g.waveEnemiesLeft = Math.max(0, g.waveEnemiesLeft - 1);
+  spawnParticles(e.x, e.y, e.color, 8);
+  g.enemies.splice(idx, 1);
+  updateUI();
+}
+
+// ── SPAWN ────────────────────────────────────────────────────
 function spawnEnemy(type) {
-  const def  = ENEMY_DEFS[type];
-  const row  = type === 'boss'
-    ? Math.floor(ROWS / 2)           // boss enters mid
-    : Math.floor(Math.random() * ROWS);
-  const startX = CW + CELL_W;
+  const def = ENEMY_DEFS[type];
+  const row = type === 'boss' ? Math.floor(ROWS / 2) : Math.floor(Math.random() * ROWS);
+  // speed: cells/sec → px/ms
+  const pxPerMs = (def.speed * CELL_W) / 1000;
 
   gameState.enemies.push({
-    id:        uid(),
-    type,
-    row,
-    x:         startX,
-    y:         GRID_Y + row * CELL_H + CELL_H / 2,
-    hp:        def.hp,
-    maxHp:     def.hp,
-    speed:     def.speed * CELL_W / 60, // px per tick (at 20fps)
-    icon:      def.icon,
-    color:     def.color,
-    damage:    def.damage,
-    dmgTimer:  0,
-    dmgMs:     def.dmgMs,
-    stunned:   0,               // ms remaining
-    erratic:   def.erratic || false,
-    erraticTimer: 0,
-    isBoss:    def.isBoss || false,
-    attackTarget: null,
-    points:    def.points,
+    id: uid(), type, row,
+    x: CW + CELL_W,
+    y: GRID_Y + row * CELL_H + CELL_H / 2,
+    hp: def.hp, maxHp: def.hp,
+    speed: pxPerMs,
+    icon: def.icon, color: def.color,
+    damage: def.damage, dmgMs: def.dmgMs, dmgTimer: 0,
+    stunned: 0,
+    erratic: def.erratic || false, erraticTimer: 0,
+    isBoss: def.isBoss || false,
+    points: def.points,
     spitTimer: def.isBoss ? 3000 : 0,
   });
 }
 
-// ── PLACE DEFENDER ───────────────────────────────────────────
+// ── DEFENDERS ────────────────────────────────────────────────
 function placeDefender(row, col, type) {
+  const g   = gameState;
   const def = UNIT_DEFS[type];
-  if (gameState.sunlight < def.cost) return;
-  if (gameState.grid[row][col] !== null) return;
+  if (g.sunlight < def.cost)       return;
+  if (g.grid[row][col] !== null)   return;
+  if (col === 0)                   return; // houses column
 
   const d = {
-    id:        uid(),
-    type,
-    row, col,
-    x:         GRID_X + col * CELL_W + CELL_W / 2,
-    y:         GRID_Y + row * CELL_H + CELL_H / 2,
-    hp:        def.hp,
-    maxHp:     def.hp,
-    icon:      def.icon,
-    color:     def.color,
-    stunned:   0,
+    id: uid(), type, row, col,
+    x: GRID_X + col * CELL_W + CELL_W / 2,
+    y: GRID_Y + row * CELL_H + CELL_H / 2,
+    hp: def.hp, maxHp: def.hp,
+    icon: def.icon, color: def.color,
+    stunned: 0,
   };
+  if (def.genSL)  { d.slTimer = 0;     d.slMs    = def.genMs;  d.genSL   = def.genSL;   }
+  if (def.ranged) { d.fireTimer = 0;   d.fireMs  = def.fireMs; d.damage  = def.damage;   }
+  if (def.melee)  { d.meleeTimer = 0;  d.meleeMs = def.meleeMs; d.damage = def.damage;   }
 
-  if (def.genSL)      { d.slTimer  = 0; d.slMs  = def.genMs; d.genSL = def.genSL; }
-  if (def.ranged)     { d.fireTimer= 0; d.fireMs= def.fireMs; d.damage= def.damage; }
-  if (def.melee)      { d.meleeTimer=0; d.meleeMs=def.meleeMs; d.damage= def.damage; }
-
-  gameState.grid[row][col] = d.id;
-  gameState.defenders.push(d);
-  gameState.sunlight -= def.cost;
+  g.grid[row][col] = d.id;
+  g.defenders.push(d);
+  g.sunlight -= def.cost;
   updateUI();
 }
 
@@ -253,51 +245,47 @@ function removeDefender(row, col) {
 
 // ── SUNLIGHT TOKENS ──────────────────────────────────────────
 function dropSlToken() {
-  // Drop 1–2 tokens spread across top of canvas
   const count = Math.random() < 0.3 ? 2 : 1;
   for (let i = 0; i < count; i++) {
     gameState.slTokens.push({
       id: uid(),
-      x: CELL_W * 0.5 + Math.random() * (CW - CELL_W),
-      y: 8,
-      vy: 0.8,
-      radius: CELL_W * 0.18,
-      ttl: 8000,   // disappears after 8s if not collected
+      x: CELL_W * 0.6 + Math.random() * (CW - CELL_W * 1.2),
+      y: 10,
+      vy: 0.04,   // px/ms — falls ~40px/s
+      radius: CELL_W * 0.2,
+      ttl: 8000,
     });
   }
 }
 
-// ── PROJECTILE SPAWN ─────────────────────────────────────────
+// ── PROJECTILES ──────────────────────────────────────────────
 function fireNote(defender) {
+  // speed: cells/sec → px/ms
+  const pxPerMs = (UNIT_DEFS.note.projSpeed * CELL_W) / 1000;
   gameState.projectiles.push({
-    id:    uid(),
+    id: uid(),
     ownerId: defender.id,
-    row:   defender.row,
-    x:     defender.x + CELL_W * 0.3,
-    y:     defender.y,
-    vx:    (UNIT_DEFS.note.projSpeed * CELL_W) / 60,
+    row: defender.row,
+    x: defender.x + CELL_W * 0.3,
+    y: defender.y,
+    vx: pxPerMs,
     damage: defender.damage,
-    radius: CELL_W * 0.1,
-    hit:   new Set(),
+    hit: new Set(),
   });
 }
 
-// ── BOSS SPIT ────────────────────────────────────────────────
 function bossSpitSeed(boss) {
-  // targets a random defender/lane area
   const targetRow = Math.floor(Math.random() * ROWS);
-  const targetCol = Math.floor(Math.random() * (COLS - 1));
+  const targetCol = 1 + Math.floor(Math.random() * (COLS - 2));
+  const pxPerMs   = (CELL_W * 2.5) / 1000;
   gameState.projectiles.push({
-    id:    uid(),
+    id: uid(),
     isBossSeed: true,
-    row:   boss.row,
-    x:     boss.x,
-    y:     boss.y,
-    tx:    GRID_X + targetCol * CELL_W + CELL_W / 2,
-    ty:    GRID_Y + targetRow * CELL_H + CELL_H / 2,
-    speed: (CELL_W * 1.8) / 60,
-    radius: CELL_W * 0.12,
-    hit:   new Set(),
+    x: boss.x, y: boss.y,
+    tx: GRID_X + targetCol * CELL_W + CELL_W / 2,
+    ty: GRID_Y + targetRow * CELL_H + CELL_H / 2,
+    speed: pxPerMs,
+    hit: new Set(),
   });
 }
 
@@ -305,7 +293,7 @@ function bossSpitSeed(boss) {
 function spawnParticles(x, y, color, count = 6) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const spd   = 1 + Math.random() * 2.5;
+    const spd   = 0.05 + Math.random() * 0.15; // px/ms
     gameState.particles.push({
       x, y,
       vx: Math.cos(angle) * spd,
@@ -319,12 +307,12 @@ function spawnParticles(x, y, color, count = 6) {
 }
 
 // ── MAIN GAME LOOP ───────────────────────────────────────────
-let rafId;
 function gameLoop(now) {
-  const g = gameState;
+  if (!gameRunning) return;
+  const g  = gameState;
   if (g.phase === 'won' || g.phase === 'lost') return;
 
-  const dt = Math.min(now - g.lastTick, 100); // cap at 100ms
+  const dt = Math.min(now - g.lastTick, 80);
   g.lastTick = now;
 
   // ── Sunlight drops
@@ -333,12 +321,12 @@ function gameLoop(now) {
     g.nextSlDrop = now + SL_DROP_MS;
   }
 
-  // ── Intermission → wave start
+  // ── Intermission → wave
   if (g.phase === 'intermission' && g.waveStartTime && now >= g.waveStartTime) {
     startWave(g.wave - 1);
   }
 
-  // ── Scheduled enemy spawns
+  // ── Scheduled spawns
   if (g.phase === 'wave') {
     while (g.waveSchedule.length > 0 && now >= g.waveSchedule[0][1]) {
       const [type] = g.waveSchedule.shift();
@@ -346,28 +334,26 @@ function gameLoop(now) {
     }
   }
 
-  // ── SL tokens drift down & expire
+  // ── SL tokens fall
   for (let i = g.slTokens.length - 1; i >= 0; i--) {
     const t = g.slTokens[i];
-    t.y   += t.vy;
+    t.y   += t.vy * dt;
     t.ttl -= dt;
-    if (t.ttl <= 0 || t.y > CH) g.slTokens.splice(i, 1);
+    if (t.ttl <= 0 || t.y > CH + 20) g.slTokens.splice(i, 1);
   }
 
-  // ── Defenders logic
+  // ── Defenders
   for (let di = g.defenders.length - 1; di >= 0; di--) {
     const d = g.defenders[di];
-
     if (d.hp <= 0) {
       spawnParticles(d.x, d.y, d.color);
       g.grid[d.row][d.col] = null;
       g.defenders.splice(di, 1);
       continue;
     }
+    if (d.stunned > 0) { d.stunned = Math.max(0, d.stunned - dt); continue; }
 
-    if (d.stunned > 0) { d.stunned -= dt; continue; }
-
-    // Sunscreen Cooler — generate SL
+    // Sunscreen Cooler
     if (d.slTimer !== undefined) {
       d.slTimer += dt;
       if (d.slTimer >= d.slMs) {
@@ -378,15 +364,18 @@ function gameLoop(now) {
       }
     }
 
-    // Note Launcher — fire
+    // Note Launcher — fire when enemy in lane ahead
     if (d.fireTimer !== undefined) {
-      const hasTarget = g.enemies.some(e => e.row === d.row && e.x > d.x && !e.stunned);
+      const hasTarget = g.enemies.some(e => e.row === d.row && e.x > d.x);
       if (hasTarget) {
         d.fireTimer += dt;
         if (d.fireTimer >= d.fireMs) {
           d.fireTimer = 0;
           fireNote(d);
         }
+      } else {
+        // Reset timer so it fires quickly when next enemy enters lane
+        d.fireTimer = Math.min(d.fireTimer, d.fireMs * 0.8);
       }
     }
 
@@ -395,15 +384,11 @@ function gameLoop(now) {
       d.meleeTimer += dt;
       if (d.meleeTimer >= d.meleeMs) {
         d.meleeTimer = 0;
-        // stomp adjacent enemies in same row within half a cell
-        for (const e of g.enemies) {
-          if (e.row === d.row && Math.abs(e.x - d.x) < CELL_W * 0.9) {
+        for (let ei = g.enemies.length - 1; ei >= 0; ei--) {
+          const e = g.enemies[ei];
+          if (e.row === d.row && Math.abs(e.x - d.x) < CELL_W * 0.85) {
             e.hp -= d.damage;
             spawnParticles(e.x, e.y, '#FF4444', 4);
-            if (e.hp <= 0) {
-              g.score += e.points;
-              updateUI();
-            }
           }
         }
       }
@@ -415,33 +400,32 @@ function gameLoop(now) {
     const p = g.projectiles[pi];
 
     if (p.isBossSeed) {
-      // Move toward target
-      const dx = p.tx - p.x;
-      const dy = p.ty - p.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < p.speed * 2) {
-        // landed — stun all defenders near target
+      const dx   = p.tx - p.x;
+      const dy   = p.ty - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < p.speed * dt * 2) {
+        // Landed — stun nearby defenders
         for (const d of g.defenders) {
-          const cx = Math.abs(d.x - p.tx);
-          const cy = Math.abs(d.y - p.ty);
-          if (cx < CELL_W * 1.5 && cy < CELL_H * 1.5) {
+          if (Math.abs(d.x - p.tx) < CELL_W * 1.5 && Math.abs(d.y - p.ty) < CELL_H * 1.5) {
             d.stunned = 3000;
-            g.stunMessages.push({ x: d.x, y: d.y - CELL_H*0.6, text:'😵 STUNNED!', ttl:1500 });
+            g.stunMessages.push({ x: d.x, y: d.y - CELL_H * 0.6, text: '😵 STUNNED!', ttl: 1500 });
           }
         }
         spawnParticles(p.tx, p.ty, '#FF9900', 10);
         g.projectiles.splice(pi, 1);
         continue;
       }
-      p.x += (dx / dist) * p.speed;
-      p.y += (dy / dist) * p.speed;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      p.x += nx * p.speed * dt;
+      p.y += ny * p.speed * dt;
+
     } else {
-      // HOA note — flies right
-      p.x += p.vx;
+      // HOA note flies rightward
+      p.x += p.vx * dt;
       if (p.x > CW + CELL_W) { g.projectiles.splice(pi, 1); continue; }
 
-      // Check collision with enemies
-      let removed = false;
+      let projRemoved = false;
       for (let ei = g.enemies.length - 1; ei >= 0; ei--) {
         const e = g.enemies[ei];
         if (e.row !== p.row || p.hit.has(e.id)) continue;
@@ -450,57 +434,43 @@ function gameLoop(now) {
           e.hp -= p.damage;
           spawnParticles(e.x, e.y, '#FF4444', 3);
           if (e.hp <= 0) {
-            g.score += e.points;
-            g.waveEnemiesLeft--;
-            spawnParticles(e.x, e.y, e.color, 8);
-            g.enemies.splice(ei, 1);
+            killEnemy(ei);
             g.projectiles.splice(pi, 1);
-            removed = true;
-            updateUI();
-            if (g.waveEnemiesLeft <= 0 && g.waveSchedule.length === 0 && g.enemies.length === 0) {
-              waveCleared();
-            }
+            projRemoved = true;
+            checkWaveCleared();
           }
-          if (removed) break;
+          break;
         }
       }
+      if (projRemoved) continue;
     }
   }
 
-  // ── Enemies logic
+  // ── Enemies
   for (let ei = g.enemies.length - 1; ei >= 0; ei--) {
     const e = g.enemies[ei];
 
     if (e.hp <= 0) {
-      g.score += e.points;
-      g.waveEnemiesLeft--;
-      spawnParticles(e.x, e.y, e.color, 8);
-      g.enemies.splice(ei, 1);
-      updateUI();
-      if (g.phase === 'wave' && g.waveEnemiesLeft <= 0 && g.waveSchedule.length === 0 && g.enemies.length === 0) {
-        waveCleared();
-      }
+      killEnemy(ei);
+      checkWaveCleared();
       continue;
     }
+    if (e.stunned > 0) { e.stunned = Math.max(0, e.stunned - dt); continue; }
 
-    if (e.stunned > 0) { e.stunned -= dt; continue; }
-
-    // Erratic movement — Creeping Charlie
+    // Creeping Charlie erratic lane switch
     if (e.erratic) {
       e.erraticTimer += dt;
-      if (e.erraticTimer > 1800 + Math.random() * 1200) {
+      if (e.erraticTimer > 2000 + Math.random() * 1500) {
         e.erraticTimer = 0;
-        // try to switch to an adjacent row without a bruiser or gate blocking
         const candidates = [e.row - 1, e.row + 1].filter(r => r >= 0 && r < ROWS);
-        if (candidates.length > 0 && Math.random() < 0.4) {
-          const newRow = candidates[Math.floor(Math.random() * candidates.length)];
-          e.row = newRow;
+        if (candidates.length && Math.random() < 0.45) {
+          e.row = candidates[Math.floor(Math.random() * candidates.length)];
           e.y   = GRID_Y + e.row * CELL_H + CELL_H / 2;
         }
       }
     }
 
-    // Boss spits seeds
+    // Boss spit
     if (e.isBoss) {
       e.spitTimer -= dt;
       if (e.spitTimer <= 0) {
@@ -509,13 +479,14 @@ function gameLoop(now) {
       }
     }
 
-    // Check for blocking defender in same row ahead
-    let blocker = null;
-    let minDist = Infinity;
+    // Find closest blocker in this row
+    let blocker  = null;
+    let minDist  = Infinity;
     for (const d of g.defenders) {
-      if (d.row === e.row && d.x > e.x && d.x - e.x < CELL_W * 1.1) {
-        const dist = d.x - e.x;
-        if (dist < minDist) { minDist = dist; blocker = d; }
+      if (d.row !== e.row) continue;
+      const dist = d.x - e.x;
+      if (dist > 0 && dist < CELL_W * 1.2 && dist < minDist) {
+        minDist = dist; blocker = d;
       }
     }
 
@@ -527,33 +498,29 @@ function gameLoop(now) {
         blocker.hp -= e.damage;
         spawnParticles(blocker.x, blocker.y, '#FF4444', 3);
       }
-    } else if (!blocker) {
-      // Move left
-      e.x -= e.speed * dt;
     } else {
-      // Slow approach to blocker
-      e.x -= e.speed * 0.3 * dt;
+      // Move left (slow approach if blocker nearby but not touching)
+      const factor = blocker ? 0.25 : 1;
+      e.x -= e.speed * dt * factor;
     }
 
-    // Check if enemy has crossed the left boundary (MEGA houses)
+    // Crossed left boundary — lose a life
     if (e.x < GRID_X + CELL_W * 0.5) {
       g.lives--;
       spawnParticles(GRID_X + CELL_W * 0.5, e.y, '#E63946', 12);
+      // Don't count this toward waveEnemiesLeft — enemy escaped, not killed
       g.enemies.splice(ei, 1);
       updateUI();
-      if (g.lives <= 0) {
-        endGame(false);
-        return;
-      }
+      if (g.lives <= 0) { endGame(false); return; }
     }
   }
 
   // ── Particles
   for (let pi = g.particles.length - 1; pi >= 0; pi--) {
     const p = g.particles[pi];
-    p.x   += p.vx;
-    p.y   += p.vy;
-    p.vy  += 0.08;
+    p.x    += p.vx * dt;
+    p.y    += p.vy * dt;
+    p.vy   += 0.0003 * dt; // gravity
     p.life += dt;
     if (p.life >= p.ttl) g.particles.splice(pi, 1);
   }
@@ -564,78 +531,64 @@ function gameLoop(now) {
     if (g.stunMessages[si].ttl <= 0) g.stunMessages.splice(si, 1);
   }
 
-  // ── Draw
-  draw();
-
+  draw(now);
   rafId = requestAnimationFrame(gameLoop);
 }
 
 // ── DRAW ─────────────────────────────────────────────────────
-function draw() {
-  const g   = gameState;
-  const now = Date.now();
-
+function draw(now) {
+  const g = gameState;
   ctx.clearRect(0, 0, CW, CH);
 
-  // Sky strip (sun-fall zone)
+  // Sky strip
   ctx.fillStyle = '#FFE033';
   ctx.fillRect(0, 0, CW, CELL_H);
 
-  // Grid — alternating lawn lanes + asphalt center
+  // Grid lanes
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const x = GRID_X + col * CELL_W;
       const y = GRID_Y + row * CELL_H;
-
-      // Center row (row 2) is asphalt
       if (row === 2) {
         ctx.fillStyle = col % 2 === 0 ? '#383838' : '#2e2e2e';
       } else {
-        ctx.fillStyle = row % 2 === 0
+        const dark = row % 2 === 0;
+        ctx.fillStyle = dark
           ? (col % 2 === 0 ? '#5DBB63' : '#56B35A')
           : (col % 2 === 0 ? '#4EAA54' : '#48A24D');
       }
       ctx.fillRect(x, y, CELL_W, CELL_H);
-
-      // Grid lines
       ctx.strokeStyle = 'rgba(0,0,0,0.07)';
       ctx.lineWidth   = 1;
       ctx.strokeRect(x, y, CELL_W, CELL_H);
     }
   }
 
-  // MEGA Houses column (col 0 overlay)
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  // MEGA Houses column highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
   ctx.fillRect(GRID_X, GRID_Y, CELL_W, CELL_H * ROWS);
 
-  // House icons in col 0
+  // House icons (dim if lost)
+  ctx.font = `${CELL_W * 0.42}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const houseEmojis = ['🏠','🏡','🏠','🏡','🏠'];
-  ctx.font         = `${CELL_W * 0.4}px serif`;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
   for (let row = 0; row < ROWS; row++) {
-    if (row < g.lives) {
-      ctx.globalAlpha = 0.7;
-    } else {
-      ctx.globalAlpha = 0.15;
-    }
+    ctx.globalAlpha = row < g.lives ? 0.75 : 0.12;
     ctx.fillText(houseEmojis[row], GRID_X + CELL_W / 2, GRID_Y + row * CELL_H + CELL_H / 2);
   }
   ctx.globalAlpha = 1;
 
-  // Entrance Island (col 8 overlay)
-  ctx.fillStyle = 'rgba(120,180,60,0.25)';
+  // Entrance island highlight
+  ctx.fillStyle = 'rgba(120,180,60,0.22)';
   ctx.fillRect(GRID_X + 8 * CELL_W, GRID_Y, CELL_W, CELL_H * ROWS);
-
-  // "ENTRANCE" label
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.font      = `bold ${CELL_W * 0.14}px sans-serif`;
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.font = `bold ${CELL_W * 0.13}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.fillText('ENTRANCE', GRID_X + 8.5 * CELL_W, GRID_Y + CELL_H * ROWS * 0.5);
 
-  // Dashed boundary line on left of col 1
+  // Danger boundary line
   ctx.setLineDash([6, 4]);
-  ctx.strokeStyle = 'rgba(230,57,70,0.5)';
+  ctx.strokeStyle = 'rgba(230,57,70,0.55)';
   ctx.lineWidth   = 2;
   ctx.beginPath();
   ctx.moveTo(GRID_X + CELL_W, GRID_Y);
@@ -647,165 +600,145 @@ function draw() {
   for (const d of g.defenders) {
     const x = GRID_X + d.col * CELL_W;
     const y = GRID_Y + d.row * CELL_H;
-
-    // Cell highlight
-    ctx.fillStyle = d.stunned > 0 ? 'rgba(150,150,255,0.3)' : 'rgba(255,255,255,0.12)';
+    ctx.fillStyle = d.stunned > 0 ? 'rgba(180,180,255,0.28)' : 'rgba(255,255,255,0.13)';
     ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
 
     // HP bar
     const hpPct = d.hp / d.maxHp;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(x + 4, y + CELL_H - 10, CELL_W - 8, 6);
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x + 4, y + CELL_H - 9, CELL_W - 8, 5);
     ctx.fillStyle = hpPct > 0.5 ? '#3CB371' : hpPct > 0.25 ? '#FFA500' : '#E63946';
-    ctx.fillRect(x + 4, y + CELL_H - 10, (CELL_W - 8) * hpPct, 6);
+    ctx.fillRect(x + 4, y + CELL_H - 9, (CELL_W - 8) * hpPct, 5);
 
-    // Icon
-    ctx.font         = `${CELL_W * 0.45}px serif`;
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.globalAlpha  = d.stunned > 0 ? 0.5 : 1;
-    ctx.fillText(d.icon, d.x, d.y - 4);
+    ctx.font = `${CELL_W * 0.46}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = d.stunned > 0 ? 0.45 : 1;
+    ctx.fillText(d.icon, d.x, d.y - 3);
     ctx.globalAlpha = 1;
 
-    // Stun star
     if (d.stunned > 0) {
-      ctx.font      = `${CELL_W * 0.22}px serif`;
-      ctx.fillText('⭐', d.x + CELL_W * 0.28, d.y - CELL_H * 0.35);
+      ctx.font = `${CELL_W * 0.22}px serif`;
+      ctx.fillText('⭐', d.x + CELL_W * 0.28, d.y - CELL_H * 0.36);
     }
   }
 
   // ── Enemies
   for (const e of g.enemies) {
-    const size = e.isBoss ? CELL_W * 0.8 : CELL_W * 0.5;
+    const size = e.isBoss ? CELL_W * 0.82 : CELL_W * 0.52;
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.13)';
     ctx.beginPath();
-    ctx.ellipse(e.x, e.y + size * 0.4, size * 0.45, size * 0.15, 0, 0, Math.PI * 2);
+    ctx.ellipse(e.x, e.y + size * 0.42, size * 0.44, size * 0.14, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Stun
-    ctx.globalAlpha = e.stunned > 0 ? 0.5 : 1;
-    ctx.font        = `${size}px serif`;
-    ctx.textAlign   = 'center';
-    ctx.textBaseline= 'middle';
+    ctx.globalAlpha = e.stunned > 0 ? 0.45 : 1;
+    ctx.font = `${size}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(e.icon, e.x, e.y);
     ctx.globalAlpha = 1;
 
     // HP bar
     const hpPct = e.hp / e.maxHp;
-    const barW  = e.isBoss ? CELL_W * 1.6 : CELL_W * 0.7;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(e.x - barW/2, e.y - size * 0.55, barW, 5);
+    const barW  = e.isBoss ? CELL_W * 1.7 : CELL_W * 0.72;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(e.x - barW / 2, e.y - size * 0.56, barW, 5);
     ctx.fillStyle = hpPct > 0.5 ? '#E63946' : hpPct > 0.25 ? '#FFA500' : '#FF4444';
-    ctx.fillRect(e.x - barW/2, e.y - size * 0.55, barW * hpPct, 5);
+    ctx.fillRect(e.x - barW / 2, e.y - size * 0.56, barW * hpPct, 5);
   }
 
   // ── Projectiles
   for (const p of g.projectiles) {
-    if (p.isBossSeed) {
-      ctx.font         = `${CELL_W * 0.28}px serif`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🌱', p.x, p.y);
-    } else {
-      // HOA note
-      ctx.font         = `${CELL_W * 0.22}px serif`;
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('📄', p.x, p.y);
-    }
+    ctx.font = `${p.isBossSeed ? CELL_W * 0.28 : CELL_W * 0.24}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.isBossSeed ? '🌱' : '📄', p.x, p.y);
   }
 
   // ── Sunlight tokens
-  const pulse = 0.9 + 0.1 * Math.sin(now / 300);
+  const pulse = 0.88 + 0.12 * Math.sin((now || 0) / 280);
   for (const t of g.slTokens) {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, t.ttl / 1000);
-    ctx.font        = `${CELL_W * 0.32 * pulse}px serif`;
-    ctx.textAlign   = 'center';
-    ctx.textBaseline= 'middle';
+    ctx.globalAlpha = Math.min(1, t.ttl / 900);
+    ctx.font = `${CELL_W * 0.34 * pulse}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('☀️', t.x, t.y);
     ctx.restore();
   }
 
   // ── Particles
   for (const p of g.particles) {
-    const alpha = 1 - p.life / p.ttl;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = Math.max(0, 1 - p.life / p.ttl);
     ctx.fillStyle   = p.color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius * alpha, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, Math.max(0.5, p.radius * (1 - p.life / p.ttl)), 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
 
   // ── Stun messages
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const sm of g.stunMessages) {
-    ctx.globalAlpha = Math.min(1, sm.ttl / 600);
-    ctx.font        = `bold ${CELL_W * 0.18}px sans-serif`;
-    ctx.fillStyle   = '#fff';
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth   = 3;
-    ctx.textAlign   = 'center';
-    ctx.textBaseline= 'middle';
+    ctx.globalAlpha = Math.min(1, sm.ttl / 500);
+    ctx.font        = `bold ${CELL_W * 0.17}px sans-serif`;
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
     ctx.strokeText(sm.text, sm.x, sm.y);
+    ctx.fillStyle = '#fff';
     ctx.fillText(sm.text, sm.x, sm.y);
   }
   ctx.globalAlpha = 1;
 
-  // ── Sky label
-  ctx.fillStyle   = 'rgba(100,60,0,0.3)';
+  // ── Sky hint text
+  ctx.fillStyle   = 'rgba(100,60,0,0.28)';
   ctx.font        = `bold ${CELL_W * 0.14}px sans-serif`;
-  ctx.textAlign   = 'left';
-  ctx.textBaseline= 'middle';
-  ctx.fillText('☀️ CLICK SUNLIGHT TOKENS TO COLLECT', CELL_W * 0.2, CELL_H / 2);
+  ctx.textAlign   = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('☀️ CLICK SUNLIGHT TOKENS TO COLLECT', CELL_W * 0.15, CELL_H / 2);
 
-  // ── Hover cell highlight
-  if (gameState.selectedUnit && gameState._hoverCell) {
-    const { row, col } = gameState._hoverCell;
-    const x = GRID_X + col * CELL_W;
-    const y = GRID_Y + row * CELL_H;
-    const occupied = g.grid[row][col] !== null;
-    ctx.fillStyle = occupied ? 'rgba(230,57,70,0.3)' : 'rgba(255,215,0,0.3)';
-    ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
-    ctx.strokeStyle= occupied ? '#E63946' : '#FFD700';
-    ctx.lineWidth  = 2;
-    ctx.strokeRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+  // ── Hover highlight
+  if (g.selectedUnit && g._hoverCell) {
+    const { row, col } = g._hoverCell;
+    if (col > 0) {
+      const x = GRID_X + col * CELL_W;
+      const y = GRID_Y + row * CELL_H;
+      const occupied = g.grid[row][col] !== null;
+      ctx.fillStyle   = occupied ? 'rgba(230,57,70,0.28)' : 'rgba(255,215,0,0.28)';
+      ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+      ctx.strokeStyle = occupied ? '#E63946' : '#FFD700';
+      ctx.lineWidth   = 2;
+      ctx.strokeRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+    }
   }
 }
 
-// ── CANVAS INTERACTION ───────────────────────────────────────
+// ── CANVAS EVENTS ────────────────────────────────────────────
 canvas.addEventListener('mousemove', e => {
   if (!gameState) return;
-  const rect  = canvas.getBoundingClientRect();
-  const mx    = e.clientX - rect.left;
-  const my    = e.clientY - rect.top;
-  const col   = Math.floor((mx - GRID_X) / CELL_W);
-  const row   = Math.floor((my - GRID_Y) / CELL_H);
-  if (col >= 0 && col < COLS && row >= 0 && row < ROWS) {
-    gameState._hoverCell = { row, col };
-  } else {
-    gameState._hoverCell = null;
-  }
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx  = (e.clientX - rect.left)  * scaleX;
+  const my  = (e.clientY - rect.top)   * scaleY;
+  const col = Math.floor((mx - GRID_X) / CELL_W);
+  const row = Math.floor((my - GRID_Y) / CELL_H);
+  gameState._hoverCell = (col >= 0 && col < COLS && row >= 0 && row < ROWS)
+    ? { row, col } : null;
 });
 
-canvas.addEventListener('mouseleave', () => {
-  if (gameState) gameState._hoverCell = null;
-});
+canvas.addEventListener('mouseleave', () => { if (gameState) gameState._hoverCell = null; });
 
 canvas.addEventListener('click', e => {
   if (!gameState) return;
   const g    = gameState;
   const rect = canvas.getBoundingClientRect();
-  const mx   = e.clientX - rect.left;
-  const my   = e.clientY - rect.top;
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx  = (e.clientX - rect.left)  * scaleX;
+  const my  = (e.clientY - rect.top)   * scaleY;
 
-  // Check sunlight token clicks first
+  // SL token click — generous hit radius
   for (let i = g.slTokens.length - 1; i >= 0; i--) {
-    const t = g.slTokens[i];
+    const t  = g.slTokens[i];
     const dx = mx - t.x, dy = my - t.y;
-    if (dx*dx + dy*dy < (t.radius * 2.5) ** 2) {
+    if (dx * dx + dy * dy < (t.radius * 3) ** 2) {
       g.sunlight += 25;
       spawnParticles(t.x, t.y, '#FFD700', 6);
       g.slTokens.splice(i, 1);
@@ -814,94 +747,82 @@ canvas.addEventListener('click', e => {
     }
   }
 
-  // Grid placement
+  // Grid placement / removal
   const col = Math.floor((mx - GRID_X) / CELL_W);
   const row = Math.floor((my - GRID_Y) / CELL_H);
   if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
 
-  if (g.selectedUnit === 'shovel') {
-    removeDefender(row, col);
-    return;
-  }
-
+  if (g.selectedUnit === 'shovel') { removeDefender(row, col); return; }
   if (g.selectedUnit) {
     const def = UNIT_DEFS[g.selectedUnit];
-    if (!def) return;
-    if (g.sunlight < def.cost) {
-      // Flash toolbar cost
-      return;
-    }
-    if (col === 0) return; // don't place on houses column
+    if (!def || g.sunlight < def.cost) return;
     placeDefender(row, col, g.selectedUnit);
   }
 });
 
-// ── TOOLBAR BUTTONS ──────────────────────────────────────────
-document.querySelectorAll('.unit-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (!gameState) return;
-    const type = btn.dataset.unit || 'shovel';
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  canvas.dispatchEvent(new MouseEvent('click', {
+    clientX: e.touches[0].clientX,
+    clientY: e.touches[0].clientY,
+  }));
+}, { passive: false });
 
-    if (gameState.selectedUnit === type) {
-      // Deselect
-      gameState.selectedUnit = null;
-      document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-      return;
-    }
-
-    // Check affordability
-    if (type !== 'shovel' && UNIT_DEFS[type] && gameState.sunlight < UNIT_DEFS[type].cost) return;
-
-    gameState.selectedUnit = type === 'shovel' ? 'shovel' : type;
-    document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
-  });
-});
-
-document.getElementById('btn-shovel').addEventListener('click', () => {
+// ── TOOLBAR ──────────────────────────────────────────────────
+// Single unified handler — no duplicate listeners
+function selectUnit(type) {
   if (!gameState) return;
-  if (gameState.selectedUnit === 'shovel') {
+  if (gameState.selectedUnit === type) {
     gameState.selectedUnit = null;
     document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-  } else {
-    gameState.selectedUnit = 'shovel';
-    document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
-    document.getElementById('btn-shovel').classList.add('selected');
+    return;
   }
+  if (type !== 'shovel' && UNIT_DEFS[type] && gameState.sunlight < UNIT_DEFS[type].cost) return;
+  gameState.selectedUnit = type;
+  document.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('selected'));
+  const sel = type === 'shovel'
+    ? document.getElementById('btn-shovel')
+    : document.querySelector(`.unit-btn[data-unit="${type}"]`);
+  if (sel) sel.classList.add('selected');
+}
+
+document.querySelectorAll('.unit-btn[data-unit]').forEach(btn => {
+  btn.addEventListener('click', () => selectUnit(btn.dataset.unit));
 });
+document.getElementById('btn-shovel').addEventListener('click', () => selectUnit('shovel'));
 
 // ── END GAME ─────────────────────────────────────────────────
 function endGame(won) {
-  if (rafId) cancelAnimationFrame(rafId);
+  gameRunning = false;
   gameState.phase = won ? 'won' : 'lost';
-
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
   setTimeout(() => {
-    if (won) {
-      document.getElementById('win-score').textContent  = gameState.score;
-      showScreen('win-screen');
-    } else {
-      document.getElementById('loss-score').textContent = gameState.score;
-      showScreen('loss-screen');
-    }
+    const scoreEl = document.getElementById(won ? 'win-score' : 'loss-score');
+    if (scoreEl) scoreEl.textContent = gameState.score;
+    showScreen(won ? 'win-screen' : 'loss-screen');
   }, 1200);
 }
 
-// ── SCREEN BUTTONS ───────────────────────────────────────────
+// ── RESTART ──────────────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click',        initGame);
 document.getElementById('btn-win-restart').addEventListener('click',  initGame);
 document.getElementById('btn-loss-restart').addEventListener('click', initGame);
 
 // ── RESIZE ───────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  if (gameState && gameState.phase !== 'won' && gameState.phase !== 'lost') {
-    resizeCanvas();
-    // Recompute all x/y positions based on new cell size
-    for (const d of gameState.defenders) {
-      d.x = GRID_X + d.col * CELL_W + CELL_W / 2;
-      d.y = GRID_Y + d.row * CELL_H + CELL_H / 2;
-    }
+  if (!gameState) return;
+  resizeCanvas();
+  for (const d of gameState.defenders) {
+    d.x = GRID_X + d.col * CELL_W + CELL_W / 2;
+    d.y = GRID_Y + d.row * CELL_H + CELL_H / 2;
+  }
+  // Recompute enemy speeds for new cell size
+  for (const e of gameState.enemies) {
+    const def = ENEMY_DEFS[e.type];
+    if (def) e.speed = (def.speed * CELL_W) / 1000;
   }
 });
 
-// ── INITIAL SCREEN ───────────────────────────────────────────
+// ── BOOT ─────────────────────────────────────────────────────
 showScreen('start-screen');
