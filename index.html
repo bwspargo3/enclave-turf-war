@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enclave Turf War: MEGA vs. The Entrance Weeds</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- SCREENS -->
+  <div id="start-screen" class="screen active">
+    <div class="start-inner">
+      <div class="hoa-stamp">H·O·A</div>
+      <h1>ENCLAVE<br/><span>TURF WAR</span></h1>
+      <p class="tagline">MEGA vs. The Entrance Weeds</p>
+      <p class="sub">Protect the neighborhood. Eliminate the dandelions.<br/>Do NOT let a single weed past the gate.</p>
+      <button id="btn-start" class="btn-primary">DEFEND THE ENCLAVE</button>
+      <div class="how-to-play">
+        <h3>HOW TO PLAY</h3>
+        <ul>
+          <li>🌞 <strong>Collect sunlight tokens</strong> by clicking them as they fall</li>
+          <li>🏠 <strong>Select a unit</strong> from the toolbar, then <strong>click a grid cell</strong> to place it</li>
+          <li>📜 Note Launchers shoot weeds automatically down the lane</li>
+          <li>💪 Bro-Tank Bruisers block and stomp adjacent weeds</li>
+          <li>🌿 Sunscreen Coolers generate bonus sunlight over time</li>
+          <li>🚧 Vinyl Gates are high-HP roadblocks</li>
+          <li>⚠️ Survive 3 waves and defeat The Grand Dandelion to WIN</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-screen" class="screen">
+    <!-- TOP BAR -->
+    <div id="top-bar">
+      <div class="top-left">
+        <span class="tbl tbl-wave">WAVE <span id="ui-wave">1</span> / 3</span>
+        <span class="tbl tbl-score">SCORE <span id="ui-score">0</span></span>
+      </div>
+      <div class="top-center">
+        <span id="ui-sl-icon">☀️</span>
+        <span id="ui-sunlight">150</span> SL
+      </div>
+      <div class="top-right">
+        <span class="lives-label">HOUSES</span>
+        <span id="ui-lives">🏠🏠🏠🏠🏠</span>
+      </div>
+    </div>
+
+    <!-- UNIT TOOLBAR -->
+    <div id="toolbar">
+      <div class="toolbar-label">SELECT UNIT ▼</div>
+      <button class="unit-btn" data-unit="sunscreen" title="Sunscreen Cooler — Generates 25 SL / 10s">
+        <span class="u-icon">🧴</span>
+        <span class="u-name">Cooler</span>
+        <span class="u-cost">50 SL</span>
+      </button>
+      <button class="unit-btn" data-unit="note" title="Note Launcher — Shoots HOA violation letters">
+        <span class="u-icon">📜</span>
+        <span class="u-name">Note Launcher</span>
+        <span class="u-cost">100 SL</span>
+      </button>
+      <button class="unit-btn" data-unit="bruiser" title="Bro-Tank Bruiser — High HP melee stomper">
+        <span class="u-icon">💪</span>
+        <span class="u-name">Bro-Tank</span>
+        <span class="u-cost">150 SL</span>
+      </button>
+      <button class="unit-btn" data-unit="gate" title="Vinyl Gate — Ultra-high HP roadblock">
+        <span class="u-icon">🚧</span>
+        <span class="u-name">Vinyl Gate</span>
+        <span class="u-cost">50 SL</span>
+      </button>
+      <button id="btn-shovel" class="unit-btn shovel-btn" title="Shovel — Remove a placed unit (no refund)">
+        <span class="u-icon">⛏️</span>
+        <span class="u-name">Remove</span>
+        <span class="u-cost">Free</span>
+      </button>
+    </div>
+
+    <!-- CANVAS WRAPPER -->
+    <div id="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- WAVE BANNER (hidden by default) -->
+    <div id="wave-banner" class="hidden">
+      <span id="wave-banner-text">WAVE 1</span>
+    </div>
+  </div>
+
+  <div id="win-screen" class="screen">
+    <div class="end-inner">
+      <div class="hoa-stamp win">✓ HOA</div>
+      <h2>ENCLAVE SECURED</h2>
+      <p>The Grand Dandelion has been neutralized.<br/>The property values are safe.</p>
+      <p class="final-score">FINAL SCORE: <strong id="win-score">0</strong></p>
+      <button id="btn-win-restart" class="btn-primary">DEFEND AGAIN</button>
+    </div>
+  </div>
+
+  <div id="loss-screen" class="screen">
+    <div class="end-inner">
+      <div class="hoa-stamp loss">✗ HOA</div>
+      <h2>ENCLAVE BREACHED</h2>
+      <p>A weed crossed the boundary.<br/>The HOA board is very disappointed.</p>
+      <p class="final-score">FINAL SCORE: <strong id="loss-score">0</strong></p>
+      <button id="btn-loss-restart" class="btn-primary">TRY AGAIN</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
